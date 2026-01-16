@@ -3,6 +3,8 @@ using UnityEngine;
 public class PlayerMovement : MonoBehaviour
 {
     [SerializeField] private float speed = 6f;
+    [SerializeField] private PlayerDash dash;
+
     private Rigidbody2D rb;
     private Vector2 moveInput;
 
@@ -19,6 +21,10 @@ public class PlayerMovement : MonoBehaviour
     private void FixedUpdate()
     {
 
+        if (dash != null && dash.IsDashing)
+            return;
+
         rb.linearVelocity = moveInput * speed;
+
     }
 }

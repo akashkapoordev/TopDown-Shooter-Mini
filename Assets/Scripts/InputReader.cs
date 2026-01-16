@@ -6,11 +6,13 @@ public class InputReader : MonoBehaviour
     [SerializeField] private InputActionReference move;
     [SerializeField] private InputActionReference aim;
     [SerializeField] private InputActionReference fire;
+    [SerializeField] private InputActionReference dash;
     
     public Vector2 Move { get; private set; }
     public Vector2 Aim { get; private set; }
     public event Action FirePressed;
     public event Action FireReleased;
+    public event Action DashPressed;
 
 
     private void OnEnable()
@@ -18,12 +20,14 @@ public class InputReader : MonoBehaviour
         move.action.Enable();
         aim.action.Enable();
         fire.action.Enable();
+        dash.action.Enable();
         move.action.performed += OnMove;
         move.action.canceled += OnMove;
         aim.action.performed += OnAim;
         aim.action.canceled += OnAim;
         fire.action.performed += OnFire;
         fire.action.canceled += OnFire;
+        dash.action.performed += OnDash;
 
     }
 
@@ -37,6 +41,12 @@ public class InputReader : MonoBehaviour
         aim.action.canceled -= OnAim;
         fire.action.performed -= OnFire;
         fire.action.canceled -= OnFire;
+        dash.action.performed -= OnDash;
+
+        move.action.Disable();
+        aim.action.Disable();
+        fire.action.Disable();
+        dash.action.Disable();
     }
 
 
@@ -54,5 +64,10 @@ public class InputReader : MonoBehaviour
     {
         if (ctx.performed) FirePressed?.Invoke();
         if (ctx.canceled) FireReleased?.Invoke();
+    }
+    private void OnDash(InputAction.CallbackContext ctx)
+    {
+        Debug.Log("DASH INPUT FIRED");
+        DashPressed?.Invoke();
     }
 }

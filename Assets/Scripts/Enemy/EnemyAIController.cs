@@ -9,52 +9,46 @@ public class EnemyAIController : MonoBehaviour
     [SerializeField] private float chaseRange = 6f;
     [SerializeField] private float attackRange = 3.5f;
 
-    [Header("Attack")]
-    [SerializeField] private float attackStateDuration = 1.2f;
+    [Header("Gun Aiming")]
+    [SerializeField] private Transform gunPivot; // 🔥 THIS ROTATES
+    [SerializeField] private float rotationSpeed = 720f; // degrees/sec
+    [SerializeField] private float fireAngleThreshold = 5f; // degrees
 
     [Header("Strafing")]
     [SerializeField] private float strafeSpeed = 1.5f;
     [SerializeField] private float strafeSwitchTime = 1.5f;
 
-    private float nextStrafeSwitch;
-    private int strafeDirection = 1; // 1 = right, -1 = left
-
-
+    [Header("Colliders")]
     [SerializeField] private Collider2D enemyCollider;
     [SerializeField] private Collider2D playerCollider;
 
-
-    private EnemyState currentState;
+    private EnemyState currentState = EnemyState.Idle;
     private EnemyMovement movement;
     private EnemyShooter shooter;
 
-    private Vector2 lockedAimDirection;
-    private float attackStateEndTime;
+    private float nextStrafeSwitch;
+    private int strafeDirection = 1;
 
     private void Awake()
     {
         movement = GetComponent<EnemyMovement>();
         shooter = GetComponent<EnemyShooter>();
-        currentState = EnemyState.Idle;
     }
 
     private void Update()
     {
         if (!player) return;
 
-        float rawDistance = Vector2.Distance(transform.position, player.position);
+        float distance = GetColliderAwareDistance();
 
-        float colliderOffset =
-            enemyCollider.bounds.extents.x +
-            playerCollider.bounds.extents.x;
+        HandleStateTransitions(distance);
+        HandleStateActions(distance);
+    }
 
-        float distance = rawDistance - colliderOffset;
-        if (currentState == EnemyState.Attack && distance < attackRange * 0.8f)
-        {
-            ChangeState(EnemyState.Chase);
-        }
+    // -------------------- STATE TRANSITIONS --------------------
 
-
+    private void HandleStateTransitions(float distance)
+    {
         switch (currentState)
         {
             case EnemyState.Idle:
@@ -70,24 +64,15 @@ public class EnemyAIController : MonoBehaviour
                 break;
 
             case EnemyState.Attack:
-                if (Time.time >= attackStateEndTime && distance > attackRange)
+                if (distance > attackRange)
                     ChangeState(EnemyState.Chase);
                 break;
         }
-
-        if (currentState != EnemyState.Attack)
-        {
-            RotateTowardsPlayer();
-        }
-        else
-        {
-            transform.right = lockedAimDirection;
-        }
-
-        HandleState(distance);
     }
 
-    private void HandleState(float distance)
+    // -------------------- STATE ACTIONS --------------------
+
+    private void HandleStateActions(float distance)
     {
         switch (currentState)
         {
@@ -96,83 +81,67 @@ public class EnemyAIController : MonoBehaviour
                 break;
 
             case EnemyState.Chase:
-                {
-                    Vector2 toPlayer = player.position - transform.position;
+                movement.SetMoveDirection(player.position - transform.position);
+                break;
 
-                    if (distance > attackRange)
-                    {
-                        movement.SetMoveDirection(toPlayer);
-                    }
-                    else
-                    {
-
-                        movement.SetMoveDirection(Vector2.zero);
-                        ChangeState(EnemyState.Attack);
-                    }
-                    break;
-                }
             case EnemyState.Attack:
-                {
-                    // Always shoot
-                    shooter.TryShoot();
-
-                    // Strafe movement
-                    Vector2 toPlayer = (player.position - transform.position).normalized;
-                    Vector2 perpendicular = new Vector2(-toPlayer.y, toPlayer.x);
-
-                    UpdateStrafeDirection();
-
-                    movement.SetMoveDirection(perpendicular * strafeDirection * strafeSpeed);
-                    break;
-                }
+                HandleAttack();
+                break;
         }
     }
 
-    private void ChangeState(EnemyState newState)
+    // -------------------- ATTACK LOGIC --------------------
+
+    private void HandleAttack()
     {
-        if (currentState == newState) return;
+        movement.SetMoveDirection(Vector2.zero);
 
-        currentState = newState;
+        // Rotate gun toward player
+        bool aligned = RotateGunTowardsPlayerSmooth();
 
-        if (newState == EnemyState.Attack)
-        {
-           
-            lockedAimDirection =
-                (player.position - transform.position).normalized;
+        // Fire ONLY when gun is aligned
+        if (aligned)
+            shooter.TryShoot();
 
-            attackStateEndTime = Time.time + attackStateDuration;
-        }
+        // Optional strafing
+        Vector2 toPlayer = (player.position - transform.position).normalized;
+        Vector2 perpendicular = new Vector2(-toPlayer.y, toPlayer.x);
+
+        UpdateStrafeDirection();
+        movement.SetMoveDirection(perpendicular * strafeDirection * strafeSpeed);
     }
 
-    private void RotateTowardsPlayer()
+    // -------------------- GUN ROTATION --------------------
+
+    private bool RotateGunTowardsPlayerSmooth()
     {
-        Vector2 dir = player.position - transform.position;
-        float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-        transform.rotation = Quaternion.Euler(0, 0, angle);
+        Vector2 dir = (player.position - gunPivot.position).normalized;
+        float targetAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+
+        float currentAngle = gunPivot.eulerAngles.z;
+        float newAngle = Mathf.MoveTowardsAngle(
+            currentAngle,
+            targetAngle,
+            rotationSpeed * Time.deltaTime
+        );
+
+        gunPivot.rotation = Quaternion.Euler(0, 0, newAngle);
+
+        float angleDiff = Mathf.Abs(Mathf.DeltaAngle(newAngle, targetAngle));
+        return angleDiff <= fireAngleThreshold;
     }
 
-    private void OnDrawGizmosSelected()
+    // -------------------- HELPERS --------------------
+
+    private float GetColliderAwareDistance()
     {
-        if (!player) return;
+        float rawDistance = Vector2.Distance(transform.position, player.position);
 
-        // Chase range
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(transform.position, chaseRange);
+        float colliderOffset =
+            enemyCollider.bounds.extents.x +
+            playerCollider.bounds.extents.x;
 
-        // Attack range
-        Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, attackRange);
-
-        // Actual collider-aware stop distance (visual aid)
-        if (enemyCollider && playerCollider)
-        {
-            float colliderOffset =
-                enemyCollider.bounds.extents.x +
-                playerCollider.bounds.extents.x;
-
-            Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere(transform.position, colliderOffset);
-        }
+        return rawDistance - colliderOffset;
     }
 
     private void UpdateStrafeDirection()
@@ -184,5 +153,20 @@ public class EnemyAIController : MonoBehaviour
         }
     }
 
+    private void ChangeState(EnemyState newState)
+    {
+        if (currentState == newState) return;
+        currentState = newState;
+    }
 
+    // -------------------- DEBUG --------------------
+
+    private void OnDrawGizmosSelected()
+    {
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, chaseRange);
+
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(transform.position, attackRange);
+    }
 }
